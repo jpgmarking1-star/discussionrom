@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트 토론 플랫폼</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- 
+    [Gemini AI 총평 프롬프팅 참조용 주석]
+    역할: 당신은 학생들의 토론을 깊이 있게 분석하고 따뜻하게 피드백해주는 수석 교사입니다.
+    요청: 다음 제공되는 학생들의 토론 대화 기록을 바탕으로 아래 4가지 준거에 따라 총평을 작성해주세요.
+    
+    평가 준거:
+    1. 쟁점의 명확성: 토론의 핵심 주제(논제)에서 벗어나지 않고, 찬성과 반대가 부딪히는 핵심 쟁점을 정확하게 다루었는가?
+    2. 주장의 일관성: 토론이 진행되는 동안 자신의 입장과 핵심 주장이 앞뒤가 맞게 유지되었는가?
+    3. 근거의 타당성과 신뢰성: 개인의 감정이나 추측이 아닌, 객관적인 통계, 전문가의 견해, 검증된 사례 등 믿을 수 있는 자료를 근거로 제시했는가?
+    4. 반론의 논리성: 상대방 주장의 허점이나 근거의 오류를 정확히 짚어내어 논리적으로 반박했는가?
+    
+    출력 형식:
+    - 각 준거별로 잘된 점과 아쉬운 점을 1~2문장으로 간단히 짚어주세요.
+    - 마지막에 학생들을 격려하는 종합 한 줄 평을 남겨주세요.
+    - 마크다운 형식을 사용하여 가독성 좋게 출력해주세요.
+    -->
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .hide { display: none !important; }
+        .chat-bubble-student { background-color: #e0f2fe; color: #0369a1; border-radius: 12px 12px 0 12px; }
+        .chat-bubble-other { background-color: #ffffff; color: #374151; border-radius: 12px 12px 12px 0; border: 1px solid #e5e7eb; }
+        .chat-bubble-teacher { background-color: #fef08a; color: #854d0e; border-radius: 12px; border: 1px solid #fde047; }
+        .chat-bubble-system { background-color: #f3f4f6; color: #6b7280; border-radius: 8px; font-size: 0.875rem; text-align: center; margin: 10px auto; width: fit-content; padding: 4px 12px; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden text-gray-800">
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-lg transition-opacity duration-300 opacity-0 pointer-events-none z-50">
+        <span id="toast-message">알림 메시지</span>
+    </div>
+
+    <!-- Modal (Alert/Confirm Alternative) -->
+    <div id="modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hide">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-11/12 max-w-md transform transition-all">
+            <h3 id="modal-title" class="text-xl font-bold mb-4 text-gray-800">알림</h3>
+            <div id="modal-content" class="text-gray-600 mb-6 max-h-96 overflow-y-auto whitespace-pre-wrap">내용</div>
+            <div class="flex justify-end gap-3">
+                <button id="modal-close-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View 1: Home (Role Selection) -->
+    <div id="view-home" class="flex-1 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
+            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                <i class="fas fa-comments"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">스마트 토론 플랫폼</h1>
+            <p class="text-gray-500 mb-8">역할을 선택하여 시작하세요</p>
+            
+            <div class="space-y-4">
+                <input type="text" id="user-name" placeholder="이름을 입력하세요 (예: 홍길동)" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2">
+                
+                <button onclick="app.navigate('create')" class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold shadow-md hover:bg-blue-700 transition flex justify-center items-center gap-2">
+                    <i class="fas fa-chalkboard-teacher"></i> 방 만들기 (교사)
+                </button>
+                <button onclick="app.navigate('join')" class="w-full py-3 bg-indigo-100 text-indigo-700 rounded-lg font-semibold shadow-sm hover:bg-indigo-200 transition flex justify-center items-center gap-2">
+                    <i class="fas fa-user-graduate"></i> 방 참여하기 (학생)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View 2: Create Room (Teacher) -->
+    <div id="view-create" class="flex-1 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4 hide">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md relative">
+            <button onclick="app.navigate('home')" class="absolute top-4 left-4 text-gray-400 hover:text-gray-600"><i class="fas fa-arrow-left"></i></button>
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">새 토론방 만들기</h2>
+            
+            <div class="space-y-5">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">대화 주제</label>
+                    <input type="text" id="create-topic" placeholder="예: 인공지능은 인류에게 축복인가?" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">모둠 수 (1~24)</label>
+                    <select id="create-groups" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <!-- Options generated by JS -->
+                    </select>
+                </div>
+                <button onclick="app.createRoom()" class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold shadow-md hover:bg-blue-700 transition mt-4">
+                    방 만들기
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View 3: Join Room (Student) -->
+    <div id="view-join" class="flex-1 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4 hide">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md relative">
+            <button onclick="app.navigate('home')" class="absolute top-4 left-4 text-gray-400 hover:text-gray-600"><i class="fas fa-arrow-left"></i></button>
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">토론방 참여하기</h2>
+            
+            <div class="space-y-5">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">초대 코드</label>
+                    <input type="text" id="join-code" placeholder="6자리 영문/숫자" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase font-mono tracking-widest text-center text-lg">
+                </div>
+                <button onclick="app.verifyAndJoinRoom()" class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold shadow-md hover:bg-blue-700 transition">
+                    입장 확인
+                </button>
+
+                <div id="join-group-section" class="hide border-t pt-4 mt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">나의 모둠 선택</label>
+                    <select id="join-group-select" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mb-4">
+                        <!-- Populated dynamically -->
+                    </select>
+                    <button onclick="app.enterStudentRoom()" class="w-full py-3 bg-green-600 text-white rounded-lg font-semibold shadow-md hover:bg-green-700 transition">
+                        토론장 들어가기
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- View 4: Teacher Dashboard -->
+    <div id="view-teacher" class="flex-1 flex flex-col h-full bg-gray-100 hide">
+        <!-- Header -->
+        <header class="bg-white shadow-sm px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4 z-10">
+            <div>
+                <h1 class="text-xl font-bold text-gray-800 truncate max-w-md" id="teacher-topic-display">주제: 로딩중...</h1>
+                <div class="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                    <span>초대 코드: <strong id="teacher-invite-code" class="text-blue-600 font-mono text-lg tracking-wider">---</strong></span>
+                    <button onclick="app.showQR()" class="text-gray-500 hover:text-gray-800" title="QR 코드 보기"><i class="fas fa-qrcode text-lg"></i></button>
+                    <button onclick="app.navigate('home')" class="text-red-500 hover:text-red-700 text-xs border border-red-200 px-2 py-1 rounded ml-4">방 종료</button>
+                </div>
+            </div>
+            
+            <!-- Phase Controls -->
+            <div class="flex gap-2 bg-gray-100 p-1 rounded-lg">
+                <button onclick="app.setPhase('대기중')" id="btn-phase-wait" class="phase-btn px-4 py-2 rounded-md text-sm font-medium bg-white shadow-sm text-blue-600 transition">대기중</button>
+                <button onclick="app.setPhase('주장펼치기')" id="btn-phase-open" class="phase-btn px-4 py-2 rounded-md text-sm font-medium text-gray-500 hover:bg-white hover:shadow-sm transition">주장펼치기</button>
+                <button onclick="app.setPhase('반론하기')" id="btn-phase-rebut" class="phase-btn px-4 py-2 rounded-md text-sm font-medium text-gray-500 hover:bg-white hover:shadow-sm transition">반론하기</button>
+                <button onclick="app.setPhase('주장다지기')" id="btn-phase-close" class="phase-btn px-4 py-2 rounded-md text-sm font-medium text-gray-500 hover:bg-white hover:shadow-sm transition">주장다지기</button>
+            </div>
+        </header>
+
+        <div class="flex-1 flex overflow-hidden">
+            <!-- Sidebar: Groups -->
+            <div class="w-64 bg-white border-r overflow-y-auto flex flex-col p-4">
+                <h3 class="font-bold text-gray-700 mb-3">모둠 목록</h3>
+                <div id="teacher-group-list" class="flex flex-col gap-2">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Main Chat Area -->
+            <div class="flex-1 flex flex-col bg-slate-50 relative">
+                <!-- Announcement Bar -->
+                <div class="bg-indigo-50 border-b border-indigo-100 p-3 flex gap-2">
+                    <input type="text" id="teacher-announcement" placeholder="전체 모둠에 공지사항 전송..." class="flex-1 px-3 py-1.5 rounded border border-indigo-200 focus:outline-none focus:border-indigo-400 text-sm">
+                    <button onclick="app.sendAnnouncement()" class="px-4 py-1.5 bg-indigo-500 text-white text-sm rounded hover:bg-indigo-600 transition shadow-sm">공지 전송</button>
+                </div>
+                
+                <!-- Chat Header -->
+                <div class="bg-white px-6 py-3 border-b flex justify-between items-center shadow-sm z-10">
+                    <h2 class="font-bold text-gray-800" id="teacher-current-group-title">모둠을 선택하세요</h2>
+                    <div class="flex gap-2">
+                        <button onclick="app.downloadChatTxt()" class="text-sm px-3 py-1.5 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded transition hidden" id="teacher-btn-export"><i class="fas fa-download mr-1"></i> TXT 저장</button>
+                        <button onclick="app.evaluateWithGemini()" class="text-sm px-3 py-1.5 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded transition hidden" id="teacher-btn-ai"><i class="fas fa-robot mr-1"></i> AI 총평 (현재 모둠)</button>
+                    </div>
+                </div>
+
+                <!-- Messages -->
+                <div id="teacher-chat-messages" class="flex-1 overflow-y-auto p-6 space-y-4">
+                    <div class="h-full flex items-center justify-center text-gray-400 text-sm">좌측에서 모둠을 선택하면 대화 내용을 볼 수 있습니다.</div>
+                </div>
+
+                <!-- Input Box -->
+                <div class="bg-white p-4 border-t flex gap-2 hide" id="teacher-chat-input-area">
+                    <input type="text" id="teacher-message-input" placeholder="현재 모둠에 코멘트 남기기..." class="flex-1 px-4 py-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" onkeypress="if(event.key === 'Enter') app.sendMessage()">
+                    <button onclick="app.sendMessage()" class="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition shadow-md">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- View 5: Student Room -->
+    <div id="view-student" class="flex-1 flex flex-col h-full bg-gray-100 hide">
+        <header class="bg-white shadow-sm px-4 py-3 flex flex-col items-center justify-between z-10 relative">
+            <button onclick="app.navigate('home')" class="absolute left-4 top-4 text-gray-400 hover:text-gray-600"><i class="fas fa-sign-out-alt"></i></button>
+            <div class="text-center w-full px-10">
+                <span class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full mb-1 inline-block" id="student-group-badge">1모둠</span>
+                <h1 class="text-base sm:text-lg font-bold text-gray-800 truncate" id="student-topic-display">주제 로딩중...</h1>
+            </div>
+            <!-- Phase Indicator -->
+            <div class="w-full mt-3">
+                <div class="flex justify-between items-center bg-gray-50 rounded-lg p-1 text-xs sm:text-sm font-medium text-gray-400 relative">
+                    <div class="absolute h-full w-1/3 bg-blue-100 rounded-md transition-all duration-300 shadow-sm border border-blue-200" id="student-phase-highlight" style="left: 0;"></div>
+                    <div class="w-1/3 text-center py-1.5 z-10" id="ind-open">주장펼치기</div>
+                    <div class="w-1/3 text-center py-1.5 z-10" id="ind-rebut">반론하기</div>
+                    <div class="w-1/3 text-center py-1.5 z-10" id="ind-close">주장다지기</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Current Phase Banner -->
+        <div id="student-phase-banner" class="bg-blue-600 text-white text-center py-1.5 text-sm font-semibold shadow-md tracking-wide">
+            현재 [대기중] 단계입니다.
+        </div>
+
+        <!-- Announcement Banner (Hidden by default) -->
+        <div id="student-announcement-banner" class="bg-indigo-100 border-l-4 border-indigo-500 text-indigo-700 p-3 text-sm shadow-sm hide flex justify-between items-start">
+            <div><strong class="mr-1">📢 선생님 공지:</strong> <span id="student-announcement-text"></span></div>
+            <button onclick="document.getElementById('student-announcement-banner').classList.add('hide')" class="text-indigo-400 hover:text-indigo-600"><i class="fas fa-times"></i></button>
+        </div>
+
+        <!-- Messages Area -->
+        <div id="student-chat-messages" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 pb-20">
+            <!-- Messages go here -->
+        </div>
+
+        <!-- Top FABs -->
+        <div class="absolute bottom-20 right-4 flex flex-col gap-2">
+            <button onclick="app.downloadChatTxt()" class="w-10 h-10 bg-gray-700 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-800" title="대화 저장">
+                <i class="fas fa-download"></i>
+            </button>
+        </div>
+
+        <!-- Input Area -->
+        <div class="bg-white p-3 sm:p-4 border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+            <div class="max-w-4xl mx-auto flex gap-2">
+                <input type="text" id="student-message-input" placeholder="메시지를 입력하세요..." class="flex-1 px-4 py-2.5 sm:py-3 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 text-sm sm:text-base shadow-inner" onkeypress="if(event.key === 'Enter') app.sendMessage()">
+                <button onclick="app.sendMessage()" class="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition shadow-md flex-shrink-0">
+                    <i class="fas fa-paper-plane text-lg"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Firebase & Application Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, setDoc, updateDoc, onSnapshot, collection, query, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuration
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'discussion-295e9';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            // Fallback config if run outside canvas, but Canvas will inject correct one.
+            projectId: "discussion-295e9"
+        };
+        const GEMINI_API_KEY = "AQ.Ab8RN6InuKRfjGofVRhbun62EyuJuYWPsQcO9FN2_ZKVzpPoQg";
+
+        // Init Firebase
+        const firebaseApp = initializeApp(firebaseConfig);
+        const db = getFirestore(firebaseApp);
+        const auth = getAuth(firebaseApp);
+
+        // State
+        const state = {
+            userId: null,
+            userName: '',
+            role: null, // 'teacher' or 'student'
+            currentSession: null,
+            currentGroup: null, // 1 to 24
+            messages: [],
+            unsubscribeSession: null,
+            unsubscribeMessages: null
+        };
+
+        // App Methods exposed to window
+        window.app = {
+            init() {
+                this.populateGroupSelect('create-groups', 24);
+                
+                // Auth Observer
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        state.userId = user.uid;
+                    } else {
+                        signInAnonymously(auth).catch(err => console.error("Auth failed", err));
+                    }
+                });
+            },
+
+            populateGroupSelect(id, max) {
+                const select = document.getElementById(id);
+                select.innerHTML = '';
+                for(let i=1; i<=max; i++){
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    opt.textContent = `${i} 모둠`;
+                    select.appendChild(opt);
+                }
+            },
+
+            navigate(viewId) {
+                document.querySelectorAll('body > div[id^="view-"]').forEach(el => el.classList.add('hide'));
+                document.getElementById(`view-${viewId}`).classList.remove('hide');
+                
+                if(viewId === 'home') {
+                    // Reset session state
+                    if(state.unsubscribeSession) state.unsubscribeSession();
+                    if(state.unsubscribeMessages) state.unsubscribeMessages();
+                    state.currentSession = null;
+                    state.currentGroup = null;
+                    document.getElementById('user-name').value = state.userName;
+                }
+            },
+
+            showToast(msg) {
+                const toast = document.getElementById('toast');
+                document.getElementById('toast-message').textContent = msg;
+                toast.classList.remove('opacity-0');
+                setTimeout(() => toast.classList.add('opacity-0'), 3000);
+            },
+
+            showModal(title, content, isHtml = false) {
+                document.getElementById('modal-title').textContent = title;
+                const contentEl = document.getElementById('modal-content');
+                if (isHtml) {
+                    contentEl.innerHTML = content;
+                } else {
+                    contentEl.textContent = content;
+                }
+                document.getElementById('modal').classList.remove('hide');
+                document.getElementById('modal-close-btn').onclick = () => {
+                    document.getElementById('modal').classList.add('hide');
+                };
+            },
+
+            validateName() {
+                const name = document.getElementById('user-name').value.trim();
+                if(!name) {
+                    this.showToast("이름을 입력해주세요.");
+                    return false;
+                }
+                state.userName = name;
+                return true;
+            },
+
+            generateInviteCode() {
+                return Math.random().toString(36).substring(2, 8).toUpperCase();
+            },
+
+            // ================== TEACHER LOGIC ==================
+            async createRoom() {
+                if(!this.validateName()) return;
+                const topic = document.getElementById('create-topic').value.trim();
+                const numGroups = parseInt(document.getElementById('create-groups').value);
+                
+                if(!topic) return this.showToast("대화 주제를 입력하세요.");
+                
+                state.role = 'teacher';
+                const inviteCode = this.generateInviteCode();
+                
+                const sessionData = {
+                    topic: topic,
+                    numGroups: numGroups,
+                    teacherId: state.userId,
+                    teacherName: state.userName,
+                    inviteCode: inviteCode,
+                    phase: '대기중',
+                    createdAt: Date.now()
+                };
+
+                try {
+                    const sessionRef = await addDoc(collection(db, `artifacts/${appId}/public/data/sessions`), sessionData);
+                    state.currentSession = { id: sessionRef.id, ...sessionData };
+                    this.setupTeacherDashboard();
+                } catch(e) {
+                    console.error(e);
+                    this.showToast("방 생성 중 오류가 발생했습니다.");
+                }
+            },
+
+            setupTeacherDashboard() {
+                this.navigate('teacher');
+                document.getElementById('teacher-topic-display').textContent = `주제: ${state.currentSession.topic}`;
+                document.getElementById('teacher-invite-code').textContent = state.currentSession.inviteCode;
+                
+                // Build group list
+                const listEl = document.getElementById('teacher-group-list');
+                listEl.innerHTML = '';
+                for(let i=1; i<=state.currentSession.numGroups; i++) {
+                    const btn = document.createElement('button');
+                    btn.className = 'w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:bg-blue-50 focus:bg-blue-100 transition text-sm font-medium text-gray-700';
+                    btn.innerHTML = `<i class="fas fa-users mr-2 text-blue-400"></i> ${i}모둠`;
+                    btn.onclick = () => this.selectGroupTeacher(i, btn);
+                    listEl.appendChild(btn);
+                }
+
+                this.listenToSession();
+                this.listenToMessages();
+                this.updatePhaseUI(state.currentSession.phase);
+            },
+
+            selectGroupTeacher(groupId, btnEl) {
+                state.currentGroup = groupId;
+                document.getElementById('teacher-current-group-title').textContent = `${groupId}모둠 대화방`;
+                
+                // Highlight button
+                document.querySelectorAll('#teacher-group-list button').forEach(b => {
+                    b.classList.remove('bg-blue-100', 'border-blue-300');
+                    b.classList.add('border-gray-200');
+                });
+                btnEl.classList.remove('border-gray-200');
+                btnEl.classList.add('bg-blue-100', 'border-blue-300');
+
+                // Show inputs
+                document.getElementById('teacher-chat-input-area').classList.remove('hide');
+                document.getElementById('teacher-btn-export').classList.remove('hide');
+                document.getElementById('teacher-btn-ai').classList.remove('hide');
+
+                this.renderMessages();
+            },
+
+            showQR() {
+                const url = `${window.location.origin}${window.location.pathname}?code=${state.currentSession.inviteCode}`;
+                const qrCanvas = document.createElement('canvas');
+                new QRious({ element: qrCanvas, value: url, size: 200 });
+                
+                const wrapper = `<div class="flex flex-col items-center gap-4">
+                    <p class="text-sm text-gray-500">아래 QR코드를 스캔하여 바로 접속하세요.</p>
+                    <img src="${qrCanvas.toDataURL()}" alt="QR Code" class="w-48 h-48 border p-2 bg-white rounded shadow-sm">
+                    <p class="font-mono font-bold text-2xl tracking-widest text-blue-600 bg-blue-50 px-4 py-2 rounded">${state.currentSession.inviteCode}</p>
+                </div>`;
+                this.showModal("토론방 초대", wrapper, true);
+            },
+
+            async setPhase(phase) {
+                if(!state.currentSession) return;
+                try {
+                    await updateDoc(doc(db, `artifacts/${appId}/public/data/sessions`, state.currentSession.id), { phase: phase });
+                    this.showToast(`'${phase}' 단계로 변경되었습니다.`);
+                } catch(e) {
+                    console.error(e);
+                }
+            },
+
+            async sendAnnouncement() {
+                const input = document.getElementById('teacher-announcement');
+                const text = input.value.trim();
+                if(!text || !state.currentSession) return;
+
+                try {
+                    await updateDoc(doc(db, `artifacts/${appId}/public/data/sessions`, state.currentSession.id), { 
+                        announcement: { text: text, timestamp: Date.now() }
+                    });
+                    input.value = '';
+                    this.showToast("공지가 전송되었습니다.");
+                } catch(e) {
+                    console.error(e);
+                }
+            },
+
+            // ================== STUDENT LOGIC ==================
+            async verifyAndJoinRoom() {
+                if(!this.validateName()) return;
+                const code = document.getElementById('join-code').value.trim().toUpperCase();
+                if(!code) return this.showToast("초대 코드를 입력하세요.");
+
+                try {
+                    // Simple query based on single rule constraints
+                    const q = query(collection(db, `artifacts/${appId}/public/data/sessions`));
+                    const snapshot = await getDocs(q);
+                    let found = null;
+                    snapshot.forEach(doc => {
+                        if(doc.data().inviteCode === code) {
+                            found = { id: doc.id, ...doc.data() };
+                        }
+                    });
+
+                    if(found) {
+                        state.currentSession = found;
+                        this.populateGroupSelect('join-group-select', found.numGroups);
+                        document.getElementById('join-group-section').classList.remove('hide');
+                    } else {
+                        this.showToast("유효하지 않은 초대 코드입니다.");
+                    }
+                } catch(e) {
+                    console.error(e);
+                    this.showToast("확인 중 오류가 발생했습니다.");
+                }
+            },
+
+            enterStudentRoom() {
+                state.role = 'student';
+                state.currentGroup = parseInt(document.getElementById('join-group-select').value);
+                
+                this.navigate('student');
+                document.getElementById('student-topic-display').textContent = state.currentSession.topic;
+                document.getElementById('student-group-badge').textContent = `${state.currentGroup}모둠`;
+
+                this.listenToSession();
+                this.listenToMessages();
+            },
+
+
+            // ================== SHARED LOGIC ==================
+            listenToSession() {
+                if(state.unsubscribeSession) state.unsubscribeSession();
+                
+                const sessionRef = doc(db, `artifacts/${appId}/public/data/sessions`, state.currentSession.id);
+                state.unsubscribeSession = onSnapshot(sessionRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        state.currentSession = { id: docSnap.id, ...data };
+                        
+                        this.updatePhaseUI(data.phase);
+                        
+                        if(state.role === 'student' && data.announcement) {
+                            const banner = document.getElementById('student-announcement-banner');
+                            document.getElementById('student-announcement-text').textContent = data.announcement.text;
+                            banner.classList.remove('hide');
+                        }
+                    }
+                }, (error) => console.error("Session sync error", error));
+            },
+
+            updatePhaseUI(phase) {
+                if(state.role === 'teacher') {
+                    const btns = document.querySelectorAll('.phase-btn');
+                    btns.forEach(b => {
+                        b.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+                        b.classList.add('text-gray-500');
+                    });
+                    let activeBtn = document.getElementById('btn-phase-wait');
+                    if(phase === '주장펼치기') activeBtn = document.getElementById('btn-phase-open');
+                    if(phase === '반론하기') activeBtn = document.getElementById('btn-phase-rebut');
+                    if(phase === '주장다지기') activeBtn = document.getElementById('btn-phase-close');
+                    
+                    activeBtn.classList.remove('text-gray-500');
+                    activeBtn.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+                } else if(state.role === 'student') {
+                    const banner = document.getElementById('student-phase-banner');
+                    banner.textContent = `현재 [${phase}] 단계입니다.`;
+                    
+                    // Highlight logic
+                    const hl = document.getElementById('student-phase-highlight');
+                    const textElements = [document.getElementById('ind-open'), document.getElementById('ind-rebut'), document.getElementById('ind-close')];
+                    textElements.forEach(el => el.classList.remove('text-blue-700', 'font-bold'));
+                    
+                    if(phase === '주장펼치기') { hl.style.left = '0%'; hl.style.width = '33.3%'; textElements[0].classList.add('text-blue-700', 'font-bold'); }
+                    else if(phase === '반론하기') { hl.style.left = '33.3%'; hl.style.width = '33.3%'; textElements[1].classList.add('text-blue-700', 'font-bold'); }
+                    else if(phase === '주장다지기') { hl.style.left = '66.6%'; hl.style.width = '33.3%'; textElements[2].classList.add('text-blue-700', 'font-bold'); }
+                    else { hl.style.width = '0%'; } // wait
+                }
+            },
+
+            listenToMessages() {
+                if(state.unsubscribeMessages) state.unsubscribeMessages();
+                
+                const messagesRef = collection(db, `artifacts/${appId}/public/data/messages`);
+                const q = query(messagesRef); // Simple query, filter in JS
+
+                state.unsubscribeMessages = onSnapshot(q, (snapshot) => {
+                    const msgs = [];
+                    snapshot.forEach(doc => {
+                        const m = doc.data();
+                        if(m.sessionId === state.currentSession.id) {
+                            msgs.push({ id: doc.id, ...m });
+                        }
+                    });
+                    
+                    // Sort memory
+                    msgs.sort((a,b) => a.timestamp - b.timestamp);
+                    state.messages = msgs;
+                    this.renderMessages();
+                }, (error) => console.error("Messages sync error", error));
+            },
+
+            renderMessages() {
+                const containerId = state.role === 'teacher' ? 'teacher-chat-messages' : 'student-chat-messages';
+                const container = document.getElementById(containerId);
+                
+                if(!state.currentGroup && state.role === 'teacher') return;
+
+                container.innerHTML = '';
+                
+                const filteredMsgs = state.messages.filter(m => m.groupId === state.currentGroup || m.groupId === 'all');
+                
+                if(filteredMsgs.length === 0) {
+                    container.innerHTML = `<div class="text-center text-gray-400 mt-10">아직 대화가 없습니다.</div>`;
+                    return;
+                }
+
+                filteredMsgs.forEach(msg => {
+                    const isMe = msg.senderId === state.userId;
+                    const timeStr = new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    
+                    const div = document.createElement('div');
+                    
+                    if (msg.groupId === 'all') {
+                        // System announcement
+                        div.className = 'chat-bubble-system shadow-sm';
+                        div.innerHTML = `<i class="fas fa-bullhorn text-indigo-400 mr-2"></i><strong>${msg.senderName}</strong>: ${msg.text} <span class="ml-2 text-xs opacity-70">${timeStr}</span>`;
+                    } else if (msg.role === 'teacher') {
+                        // Teacher message
+                        div.className = 'flex flex-col mb-4 items-center w-full';
+                        div.innerHTML = `
+                            <div class="chat-bubble-teacher px-4 py-2 shadow-sm text-sm sm:text-base max-w-[85%] text-center">
+                                <strong class="mr-1 block text-xs opacity-70 mb-1">👨‍🏫 ${msg.senderName} (선생님) 코멘트</strong>
+                                ${msg.text}
+                            </div>
+                            <span class="text-[10px] text-gray-400 mt-1">${timeStr}</span>
+                        `;
+                    } else {
+                        // Student message
+                        const alignClass = isMe ? 'items-end' : 'items-start';
+                        const bubbleClass = isMe ? 'chat-bubble-student' : 'chat-bubble-other';
+                        div.className = `flex flex-col mb-3 ${alignClass} w-full`;
+                        
+                        div.innerHTML = `
+                            ${!isMe ? `<span class="text-xs text-gray-500 mb-1 ml-1">${msg.senderName}</span>` : ''}
+                            <div class="${bubbleClass} px-4 py-2 shadow-sm text-sm sm:text-base max-w-[80%] inline-block break-words">
+                                ${msg.text}
+                            </div>
+                            <span class="text-[10px] text-gray-400 mt-1 mx-1">${timeStr}</span>
+                        `;
+                    }
+                    container.appendChild(div);
+                });
+
+                // Auto scroll to bottom
+                container.scrollTop = container.scrollHeight;
+            },
+
+            async sendMessage() {
+                const inputId = state.role === 'teacher' ? 'teacher-message-input' : 'student-message-input';
+                const input = document.getElementById(inputId);
+                const text = input.value.trim();
+                
+                if(!text || !state.currentSession || !state.currentGroup) return;
+
+                const msgData = {
+                    sessionId: state.currentSession.id,
+                    groupId: state.currentGroup, // Teacher sends to currently viewed group
+                    senderId: state.userId,
+                    senderName: state.userName,
+                    role: state.role,
+                    text: text,
+                    timestamp: Date.now()
+                };
+
+                try {
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/messages`), msgData);
+                    input.value = '';
+                } catch(e) {
+                    console.error(e);
+                    this.showToast("메시지 전송 실패");
+                }
+            },
+
+            // ================== UTILS & GEMINI ==================
+            downloadChatTxt() {
+                const filteredMsgs = state.messages.filter(m => m.groupId === state.currentGroup);
+                if(filteredMsgs.length === 0) return this.showToast("저장할 대화 내용이 없습니다.");
+
+                let content = `======================================\n`;
+                content += `대화 주제: ${state.currentSession.topic}\n`;
+                content += `모둠: ${state.currentGroup}모둠\n`;
+                content += `저장 일시: ${new Date().toLocaleString()}\n`;
+                content += `======================================\n\n`;
+
+                filteredMsgs.forEach(m => {
+                    const time = new Date(m.timestamp).toLocaleTimeString();
+                    const roleTag = m.role === 'teacher' ? '[선생님] ' : '';
+                    content += `[${time}] ${roleTag}${m.senderName}: ${m.text}\n`;
+                });
+
+                const blob = new Blob([content], {type: 'text/plain'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `토론기록_${state.currentSession.topic.substring(0,10)}_${state.currentGroup}모둠.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            },
+
+            async evaluateWithGemini() {
+                const filteredMsgs = state.messages.filter(m => m.groupId === state.currentGroup && m.role === 'student');
+                if(filteredMsgs.length < 3) {
+                    return this.showToast("AI 평가를 하기에 대화 내용이 부족합니다.");
+                }
+
+                // Construct Chat Log for prompt
+                let chatLog = "";
+                filteredMsgs.forEach(m => {
+                    chatLog += `${m.senderName}: ${m.text}\n`;
+                });
+
+                const systemInstruction = `
+당신은 학생들의 토론을 깊이 있게 분석하고 따뜻하게 피드백해주는 수석 교사입니다.
+다음 제공되는 학생들의 토론 대화 기록을 바탕으로 아래 4가지 준거에 따라 총평을 작성해주세요.
+
+[평가 준거]
+1. 쟁점의 명확성: 토론의 핵심 주제(논제)에서 벗어나지 않고, 찬성과 반대가 부딪히는 핵심 쟁점을 정확하게 다루었는가?
+2. 주장의 일관성: 토론이 진행되는 동안 자신의 입장과 핵심 주장이 앞뒤가 맞게 유지되었는가?
+3. 근거의 타당성과 신뢰성: 개인의 감정이나 추측이 아닌, 믿을 수 있는 자료나 합리적 논리를 근거로 제시했는가?
+4. 반론의 논리성: 상대방 주장의 허점이나 근거의 오류를 짚어내어 논리적으로 반박했는가?
+
+[출력 형식]
+- 각 준거별로 잘된 점과 아쉬운 점을 1~2문장으로 간단히 짚어주세요.
+- 마지막에 학생들을 격려하는 종합 한 줄 평을 남겨주세요.
+- HTML 형식 (<b>, <br>, <ul>, <li> 등)을 사용하여 예쁘게 포맷팅해서 출력해주세요 (마크다운 사용금지).
+`;
+                const userPrompt = `토론 주제: ${state.currentSession.topic}\n\n[학생들 대화 기록]\n${chatLog}`;
+
+                this.showModal("AI 총평 생성 중", "Gemini가 대화 내용을 분석하고 있습니다. 잠시만 기다려주세요...<br><br><i class='fas fa-spinner fa-spin text-2xl text-blue-500'></i>", true);
+
+                try {
+                    const payload = {
+                        contents: [{ parts: [{ text: userPrompt }] }],
+                        systemInstruction: { parts: [{ text: systemInstruction }] }
+                    };
+
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
+                    
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    if (result.candidates && result.candidates[0].content) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        this.showModal(`✨ ${state.currentGroup}모둠 토론 총평`, text, true);
+                    } else {
+                        throw new Error("Invalid response format");
+                    }
+                } catch(error) {
+                    console.error("Gemini Error:", error);
+                    this.showModal("오류", "AI 총평을 생성하는 중 문제가 발생했습니다. API 키나 네트워크 상태를 확인해주세요.");
+                }
+            }
+        };
+
+        // Check if opened via QR/Link with code
+        window.addEventListener('DOMContentLoaded', () => {
+            window.app.init();
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            if(code) {
+                document.getElementById('join-code').value = code;
+                window.app.navigate('join');
+            }
+        });
+
+    </script>
+</body>
+</html>
